@@ -4,12 +4,47 @@ import React from "react";
 import { Loader } from "../../theme";
 import cn from "../../utils/classnames.ts";
 import ChatForm from "./ChatForm.tsx";
+import WebLLM from "../../ai/llm/WebLLM.ts";
 
 const Chat: React.FC = () => {
   const [chatOpen, setChatOpen] = React.useState<boolean>(false);
 
   const [thinking, setThinking] = React.useState<boolean>(false);
   const [response, setResponse] = React.useState<string>("");
+  const [modelLoading, setModelLoading] = React.useState<boolean>(false);
+  const [modelReady, setModelReady] = React.useState<boolean>(false);
+  const [loadingProgress, setLoadingProgress] = React.useState<string>("");
+  
+  const webllmRef = React.useRef<WebLLM | null>(null);
+  const conversationRef = React.useRef<any>(null);
+
+  React.useEffect(() => {
+    webllmRef.current = new WebLLM();
+  }, []);
+
+  const initializeModel = async () => {
+    if (modelReady || modelLoading) return;
+    
+    setModelLoading(true);
+    setLoadingProgress("Initializing model...");
+    
+    try {
+      if (webllmRef.current) {
+        // Create a conversation with a simple system prompt
+        conversationRef.current = webllmRef.current.createConversation(
+          "You are a helpful AI assistant for an e-commerce store. Answer questions briefly and helpfully."
+        );
+        
+        setModelReady(true);
+        setLoadingProgress("");
+      }
+    } catch (error) {
+      console.error("Error loading model:", error);
+      setLoadingProgress("Error loading model. Please try again.");
+    } finally {
+      setModelLoading(false);
+    }
+  };
 
   return (
     <React.Fragment>
@@ -23,20 +58,55 @@ const Chat: React.FC = () => {
       >
         <h3 className="flex items-center gap-2">
           <SparklesIcon aria-hidden="true" className="size-4" /> Ask the Agent
+          {modelReady && <span className="text-xs text-green-600">(Model Ready)</span>}
         </h3>
-        <ChatForm
-          chatOpen={chatOpen}
-          onSubmit={async (prompt) => {
-            if (!prompt) {
+        
+        {!modelReady && !modelLoading && (
+          <div className="rounded-md bg-yellow-50 border border-yellow-200 p-4">
+            <p className="text-sm text-yellow-800 mb-2">Model not loaded yet</p>
+            <button
+              onClick={initializeModel}
+              className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition text-sm"
+            >
+              Load AI Model
+            </button>
+          </div>
+        )}
+        
+        {modelLoading && (
+          <div className="rounded-md bg-blue-50 border border-blue-200 p-4">
+            <p className="flex items-center gap-3 text-sm text-blue-800">
+              <Loader size={4} /> {loadingProgress || "Loading model..."}
+            </p>
+            <p className="text-xs text-blue-600 mt-2">This may take a few minutes on first load</p>
+          </div>
+        )}
+        
+        {modelReady && (
+          <ChatForm
+            chatOpen={chatOpen}
+            onSubmit={async (prompt) => {
+              if (!prompt) {
+                setResponse("");
+                return;
+              }
+              setThinking(true);
               setResponse("");
-              return;
-            }
-            setThinking(true);
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-            setResponse(prompt);
-            setThinking(false);
-          }}
-        />
+              
+              try {
+                if (conversationRef.current) {
+                  const aiResponse = await conversationRef.current.generate(prompt, 0.7);
+                  setResponse(aiResponse);
+                }
+              } catch (error) {
+                console.error("Error generating response:", error);
+                setResponse("Sorry, I encountered an error. Please try again.");
+              } finally {
+                setThinking(false);
+              }
+            }}
+          />
+        )}
         {(response.length !== 0 || thinking) && (
           <div className="mt-4">
             {thinking ? (
