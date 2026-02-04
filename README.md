@@ -174,8 +174,8 @@ Then:
 
 ## 🙏 Credits
 
-- **Workshop**: Shivay Lamba ([@howabortnow](https://twitter.com/howdyshivay))
-- **Original Repo**: [cityjs-singapore-workshop](https://github.com/nicokoenig/cityjs-singapore-workshop)
+- **Workshop**: Shivay Lamba ([@howdyshivay](https://twitter.com/howdyshivay))
+- **Source Repo**: [cityjs-singapore-workshop](https://github.com/shivaycb/cityjs-singapore-workshop)
 - **Exercise by**: Ricardo (with Claude Opus 4.5)
 
 ---
