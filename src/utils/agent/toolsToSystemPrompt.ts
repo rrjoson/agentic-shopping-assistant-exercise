@@ -21,7 +21,7 @@ const formatXmlExample = (
 const toolsToSystemPrompt = (tools: Record<string, Tool<any>>): string => {
   const toolDescriptions: Array<string> = Object.entries(tools).map(
     ([name, tool]) => `Tool Name: ${name}
-Description ${tool.description}
+Description: ${tool.description}
 Parameters: 
   ${generateSchemaDescription(tool.parameters).join("\n  ")}
 Examples: 

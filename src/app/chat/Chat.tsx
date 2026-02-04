@@ -1,10 +1,49 @@
 import { SparklesIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import React from "react";
+import { useNavigate } from "react-router";
 
 import { Loader } from "../../theme";
 import cn from "../../utils/classnames.ts";
 import ChatForm from "./ChatForm.tsx";
 import WebLLM from "../../ai/llm/WebLLM.ts";
+import useCart from "../../store/provider/cart/useCart.ts";
+import { createShoppingTools } from "../../ai/tools/shoppingTools.ts";
+import parseXmlFunctionCalls from "../../utils/agent/parseXmlFunctionCalls.ts";
+import { PRODUCTS } from "../../store/products.ts";
+import type { ToolAction } from "../../utils/agent/tool.ts";
+import toolsToSystemPrompt from "../../utils/agent/toolsToSystemPrompt.ts";
+
+// Generate ALL products in compact format: "id: Name ($price)"
+const productList = PRODUCTS.map(p => `${p.id}: ${p.name} ($${p.price})`).join("\n");
+
+// 🎯 FIRST CLASS SYSTEM PROMPT: Auto-generates tool docs from tool definitions!
+const buildSystemPrompt = (tools: ReturnType<typeof createShoppingTools>) => `
+You are a friendly shopping assistant for Emoji Store.
+
+RULES:
+- Never use <think> tags or internal reasoning
+- Keep responses short (1-2 sentences max)
+- ALWAYS use tools - don't just describe what you would do
+- Use browseProducts to NAVIGATE to shop page with filters
+- Use searchProducts to just LIST products without navigating
+
+AVAILABLE PRODUCTS (use exact productId when adding to cart):
+${productList}
+
+VALID COLORS: red, green, blue, yellow, purple, pink, black, white, gray
+VALID SIZES: s, m, l, xl, one (for one-size items like bags, beanies, mugs)
+
+${toolsToSystemPrompt(tools)}
+`.trim();
+
+// Clean response by removing think tags and other artifacts
+const cleanResponse = (text: string): string => {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<\/?think>/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
 
 const Chat: React.FC = () => {
   const [chatOpen, setChatOpen] = React.useState<boolean>(false);
@@ -14,27 +53,49 @@ const Chat: React.FC = () => {
   const [modelLoading, setModelLoading] = React.useState<boolean>(false);
   const [modelReady, setModelReady] = React.useState<boolean>(false);
   const [loadingProgress, setLoadingProgress] = React.useState<string>("");
-  
+
+  const cart = useCart();
+  const navigate = useNavigate(); // 🚀 For navigation actions!
   const webllmRef = React.useRef<WebLLM | null>(null);
   const conversationRef = React.useRef<any>(null);
+  const toolsRef = React.useRef<ReturnType<typeof createShoppingTools> | null>(null);
+
+  // 🎯 Handle actions returned by tools
+  const handleToolAction = (action: ToolAction) => {
+    switch (action.type) {
+      case "navigate":
+        navigate(action.url);
+        break;
+      case "openModal":
+        // Could implement modal opening here
+        console.log("Open modal:", action.modalId);
+        break;
+      case "scroll":
+        const element = document.getElementById(action.elementId);
+        element?.scrollIntoView({ behavior: "smooth" });
+        break;
+    }
+  };
 
   React.useEffect(() => {
     webllmRef.current = new WebLLM();
-  }, []);
+    toolsRef.current = createShoppingTools(cart);
+  }, [cart]);
 
   const initializeModel = async () => {
     if (modelReady || modelLoading) return;
-    
+
     setModelLoading(true);
     setLoadingProgress("Initializing model...");
-    
+
     try {
-      if (webllmRef.current) {
-        // Create a conversation with a simple system prompt
-        conversationRef.current = webllmRef.current.createConversation(
-          "You are a helpful AI assistant for an e-commerce store. Answer questions briefly and helpfully."
-        );
-        
+      if (webllmRef.current && toolsRef.current) {
+        // 🎯 FIRST CLASS: Auto-generate system prompt from tool definitions!
+        const systemPrompt = buildSystemPrompt(toolsRef.current);
+        console.log("📋 Generated System Prompt:\n", systemPrompt); // Debug: see the generated prompt
+
+        conversationRef.current = webllmRef.current.createConversation(systemPrompt);
+
         setModelReady(true);
         setLoadingProgress("");
       }
@@ -92,11 +153,47 @@ const Chat: React.FC = () => {
               }
               setThinking(true);
               setResponse("");
-              
+
               try {
-                if (conversationRef.current) {
+                if (conversationRef.current && toolsRef.current) {
                   const aiResponse = await conversationRef.current.generate(prompt, 0.7);
-                  setResponse(aiResponse);
+
+                  // Clean the response (remove <think> tags)
+                  const cleaned = cleanResponse(aiResponse);
+
+                  // Parse for function calls
+                  const { cleanText, functionCalls } = parseXmlFunctionCalls(cleaned);
+
+                  // Execute any function calls
+                  if (functionCalls.length > 0) {
+                    const results: string[] = [];
+
+                    for (const call of functionCalls) {
+                      const tool = toolsRef.current[call.name as keyof typeof toolsRef.current];
+                      if (tool && typeof tool.execute === "function") {
+                        try {
+                          // Cast to any since XML parsing returns generic types
+                          const result = await tool.execute(call.parameters as any);
+                          results.push(result.nextPrompt);
+
+                          // 🚀 Handle any actions returned by the tool!
+                          if (result.action) {
+                            handleToolAction(result.action);
+                          }
+                        } catch (err) {
+                          results.push(`Error: couldn't complete ${call.name}`);
+                        }
+                      }
+                    }
+
+                    // Show AI text + tool results
+                    const finalResponse = cleanText
+                      ? `${cleanText}\n\n${results.join("\n")}`
+                      : results.join("\n");
+                    setResponse(finalResponse);
+                  } else {
+                    setResponse(cleanText || cleaned);
+                  }
                 }
               } catch (error) {
                 console.error("Error generating response:", error);
@@ -108,15 +205,15 @@ const Chat: React.FC = () => {
           />
         )}
         {(response.length !== 0 || thinking) && (
-          <div className="mt-4">
+          <div className="mt-4 max-h-64 overflow-y-auto">
             {thinking ? (
               <p className="flex items-center gap-3 font-light text-gray-500 italic">
                 <Loader size={4} /> thinking..
               </p>
             ) : (
-              <p className="font-light text-gray-700 [&>li]:ml-5 [&>ol]:my-2 [&>ol]:ml-4 [&>ol]:list-decimal [&>ul]:my-2 [&>ul]:ml-5 [&>ul]:list-disc">
+              <div className="font-light text-gray-700 text-sm whitespace-pre-wrap">
                 {response}
-              </p>
+              </div>
             )}
           </div>
         )}
