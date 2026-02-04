@@ -164,7 +164,7 @@ Then:
 
 ## 💡 Ideas for Next Steps
 
-- [ ] Add Mastra SDK for proper agent orchestration
+- [ ] **Try [Mastra](https://mastra.ai/)** - Build production-ready AI agents with TypeScript. Mastra provides agent orchestration, workflows, tool management, and integrations out of the box
 - [ ] Implement memory (conversation history)
 - [ ] Add more tool actions (openModal, scroll)
 - [ ] Real vector embeddings for product search
