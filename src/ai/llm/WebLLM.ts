@@ -5,7 +5,7 @@ import {
   } from "@mlc-ai/web-llm";
   
 
-import { GEMMA_2_9B_CONFIG } from "../../utils/agent/webllm.ts";
+import { QWEN_1B_CONFIG } from "../../utils/agent/webllm.ts";
   
   class WebLLM {
     private engine: MLCEngine | null = null;
